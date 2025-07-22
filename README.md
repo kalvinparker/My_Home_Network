@@ -1,6 +1,6 @@
 # OPNsense Home Network Guide
 
-  (https://github.com/kalvinparker/My_Home_Network/blob/main/Network%20Diagram.png)
+  <!-- (https://github.com/kalvinparker/My_Home_Network/blob/main/Network%20Diagram.png) -->
 
 A comprehensive, step-by-step guide to building a secure, segmented, and powerful home network using OPNsense as the core firewall and router.
 
