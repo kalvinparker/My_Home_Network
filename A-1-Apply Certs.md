@@ -35,7 +35,7 @@ Fill in the fields on the "Edit Certificate" page. This is the most critical ste
 | **Common Name** | `router.homenetwork.local` (or whatever FQDN you use) | This must match the exact hostname you type into your browser's address bar to access OPNsense. |
 | **Alternative Names** | Add the following: <br> • **IP Address:** `192.168.1.1` <br> • **DNS domain name:** `opnsense.local` | This is vital for preventing browser errors. It lists all valid names (IP and DNS) for the router, ensuring the certificate is valid no matter how you access it. |
 
-> **CISM Mindset Toolkit Applied: Control Maturity & Identity Assurance**
+> **Control Maturity & Identity Assurance**
 >
 > You have just moved from a low-maturity control (an untrusted, self-signed certificate) to a high-maturity one (a certificate chained to a trusted root).
 > *   **Identity Assurance:** The `Common Name` and `Alternative Names` fields are not just text; they are a binding assertion of identity. You are declaring, "This certificate is valid *only* for these specific names." This is the core of preventing impersonation.
