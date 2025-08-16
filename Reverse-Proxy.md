@@ -2,7 +2,9 @@
 
 This guide provides a complete, step-by-step process for securely exposing any internal service (in a container or on bare metal) to the internet using OPNsense's HAProxy plugin, Let's Encrypt for trusted SSL, and achieving an A+ security rating.
 
-1. **Replace keyword: myservice** with the name of your own internal service (e.g. next-cloud, bitwarden, etc.)
+1. **Replace keyword: myservice**, change "myservice" to the name of your specific service, like Nextcloud or Bitwarden.
+2. **Replace keyword: dnsprovider**, change "dnsprovider" to the name of your DNS provider, such as duckdns.org or ddns.net.
+3. **Replace keyword: name**, change "name" to the name you want to use for your FQDN (Fully Qualified Domain Name). For example, your FQDN might look like cloud.duckdns.org or vault.ddns.net.
 
 ### Core Concept: The Flow of Traffic
 
@@ -103,7 +105,7 @@ We build the components from the back to the front.
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
     *   **Option pass-through:**
          ```
-         acl is_myservice_host hdr(host) -i 83v.duckdns.org
+         acl is_myservice_host hdr(host) -i name.dnsprovider.org
          acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
          use_backend myservice_Backend if is_myservice_host is_from_trusted_network
          ```
@@ -180,7 +182,7 @@ We will create a brand new, temporary, and absolutely minimal HAProxy setup. Thi
     *   **Listen Addresses:** Use a completely new port that isn't used anywhere else, for example: `0.0.0.0:9999`.
     *   **Type:** `http / https (SSL offloading)`.
     *   **Default Backend Pool:** **This is the key difference.** Instead of using rules, select your `myservice_Backend` directly from this dropdown menu.
-    *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
+    *   **SSL Offloading -> Certificates:** Select your `name.dnsprovider.org` certificate.
 4.  **DO NOT** add any rules. **DO NOT** add any special cipher strings. Leave everything else as default.
 5.  Click **Save**.
 
@@ -198,7 +200,7 @@ We will create a brand new, temporary, and absolutely minimal HAProxy setup. Thi
 2.  Open a new private browser window.
 3.  Navigate to the new test URL:
 
-    ## `https://83v.duckdns.org:9999`
+    ## `https://name.dnsprovider.org:9999`
 
 ### Interpreting the Final Result
 
@@ -247,7 +249,7 @@ Let's start with a clean slate by removing the original frontend and its rule/co
     ~~*   Go to **Rules & Checks -> Conditions**. Click **Add**.~~
     ~~*   **Name:** `Condition_is_myservice`~~
     ~~*   **Condition type:** `Host matches`~~
-    ~~*   **Host String:** `83v.duckdns.org`~~
+    ~~*   **Host String:** `name.dnsprovider.org`~~
     ~~*   **Save**.~~
 ~~2.  **Create the Rule:**~~
     ~~*   Go to **Rules & Checks -> Rules**. Click **Add**.~~
@@ -268,14 +270,14 @@ Now we build the final, working front door on the correct port.
     *   **Listen Addresses:** `0.0.0.0:8443`
     *   **Type:** `http / https (SSL offloading)`
     *   **Default Backend Pool:** Leave as `None`.
-    *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
+    *   **SSL Offloading -> Certificates:** Select your `name.dnsprovider.org` certificate.
     *   **Enable Advanced settings:** `Checcked`.
     *   **Advanced SSL settings:**
         *   **Cipher List:** `ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384`
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
     *   **Option pass-through:**
          ```
-         acl is_myservice_host hdr(host) -i 83v.duckdns.org
+         acl is_myservice_host hdr(host) -i name.dnsprovider.org
          acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
          use_backend myservice_Backend if is_myservice_host is_from_trusted_network
          ```
@@ -288,4 +290,4 @@ Now we build the final, working front door on the correct port.
 2.  **Delete the Test Firewall Rules:** Go to **Firewall -> Rules** for both **WAN** and **LAN** and delete the temporary rules you created for port `9999`.
 3.  **Apply All Changes:** Click **Apply** for both the Firewall and HAProxy.
 
-You are now done. Your system is fully functional, secure, and running on the correct port (`8443`). You can now use `https://83v.duckdns.org:8443` in your browser and mobile app. **Congratulations on an incredible job of troubleshooting!**
+You are now done. Your system is fully functional, secure, and running on the correct port (`8443`). You can now use `https://name.dnsprovider.org:8443` in your browser and mobile app. **Congratulations on an incredible job of troubleshooting!**
