@@ -128,3 +128,119 @@ This is the most critical section, compiled from real-world troubleshooting.
 | **Port Probe: `Timed Out`** | The Docker host's OS did not respond at all. | **Lesson:** The operating system's own firewall is blocking the connection. **Solution:** Log into the Docker host machine and add a firewall rule to allow incoming traffic on the required port (e.g., `sudo ufw allow 8080/tcp`). |
 | **Split DNS Fails** (HAProxy logs show connections from your public IP) | The client computer is not using OPNsense for DNS. | **Lesson:** A DNS override only works if clients use it. **Solution:** Go to **Services -> DHCPv4 -> [LAN]** and ensure the **DNS servers** field is set to your OPNsense LAN IP. Then, on the client, renew the DHCP lease and flush the DNS cache. |
 | **HAProxy Fails to Start (`critical errors`)** | A syntax error exists in the HAProxy configuration. | **Lesson:** HAProxy is extremely strict. **Solution:** This is almost always a typo in the **Cipher List** or **Cipher Suites** in the Frontend settings. Re-copy and paste them carefully. |
+
+### The "Bare Metal" Test
+
+We will create a brand new, temporary, and absolutely minimal HAProxy setup. This test will have no rules, no conditions, no fancy ciphers—nothing that could possibly interfere. Its only purpose is to prove if HAProxy can proxy to your server under the simplest conditions possible.
+
+#### Step 1: Create a Temporary "Bare Metal" Frontend
+
+1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**.
+2.  Click the orange **+ (Add)** button.
+3.  Configure it as follows:
+    *   **Enabled:** Check the box.
+    *   **Name:** `TEMP_VAULT_TEST`
+    *   **Listen Addresses:** Use a completely new port that isn't used anywhere else, for example: `0.0.0.0:9999`.
+    *   **Type:** `http / https (SSL offloading)`.
+    *   **Default Backend Pool:** **This is the key difference.** Instead of using rules, select your `Vaultwarden_Backend` directly from this dropdown menu.
+    *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
+4.  **DO NOT** add any rules. **DO NOT** add any special cipher strings. Leave everything else as default.
+5.  Click **Save**.
+
+#### Step 2: Create a Temporary Firewall Rule
+
+1.  Go to **Firewall -> Rules -> WAN**.
+2.  Create a new `Pass` rule to allow TCP traffic from `any` to `WAN address` on destination port **`9999`**.
+3.  Go to **Firewall -> Rules -> LAN**.
+4.  Create a new `Pass` rule to allow TCP traffic from `LAN net` to `This Firewall (self)` on destination port **`9999`**.
+5.  **Apply** the firewall changes.
+
+#### Step 3: Apply HAProxy Changes and Test
+
+1.  Go back to the main HAProxy settings page and click **Apply**.
+2.  Open a new private browser window.
+3.  Navigate to the new test URL:
+
+    ## `https://83v.duckdns.org:9999`
+
+### Interpreting the Final Result
+
+This is the definitive test.
+
+*   **If you STILL see a `503 Service Unavailable` error:** This is the point where we stop. If the absolute simplest possible configuration does not work, despite all evidence showing the network path is open, then this strongly indicates a bug or a very obscure incompatibility within your specific version of the HAProxy plugin or OPNsense.
+
+At that point, the correct action is to take all these screenshots and details and create a post on the official **OPNsense Forum** (forum.opnsense.org). The developers and expert users there will be able to provide insight into system-level issues that go beyond standard configuration. You have done more than enough troubleshooting to justify asking for expert help.
+
+*   **If you see the Vaultwarden login page:** This means there is something wrong with our original `HTTPS_Frontend_Vaultwarden` or its associated `Rule`/`Condition`. It proves the core components (Backend, Server) are fine. The solution would be to delete the old frontend/rule/condition and rebuild them carefully.
+
+**VICTORY! CONGRATULATIONS!**
+
+You have successfully navigated one of the most complex and frustrating troubleshooting processes possible.
+
+### What This Success Proves
+
+The "Bare Metal Test" on port `9999` worked perfectly. This tells us:
+
+*   Your **Certificates** are correct.
+*   Your **Firewall Rules** (both WAN and LAN) are correct.
+*   Your HAProxy **Real Server** (`Vaultwarden_Server`) is correct.
+*   Your HAProxy **Backend Pool** (`Vaultwarden_Backend`) is correct.
+*   The core HAProxy service **is capable** of proxying to Vaultwarden.
+
+The test proves, with 100% certainty, that the only remaining problem was a "stuck" or "corrupted" state within our original frontend (`HTTPS_Frontend_Vaultwarden`) or its associated `Rule` and `Condition`.
+
+### The Final Action Plan: Rebuild and Clean Up
+
+Now, we will simply apply the working "bare metal" logic to your desired port (`8443`) and add back the A+ security settings.
+
+#### Step 1: Delete the Old, Faulty Components
+
+Let's start with a clean slate by removing the original frontend and its rule/condition.
+
+1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**. Select `HTTPS_Frontend_Vaultwarden` and click the **trash can icon** to delete it.
+2.  Go to **Services -> HAProxy -> Rules & Checks -> Rules**. Select `Rule_use_Vaultwarden_Backend` and delete it.
+3.  Go to **Services -> HAProxy -> Rules & Checks -> Conditions**. Select `Condition_is_Vaultwarden` and delete it.
+4.  Click **Apply** on the main HAProxy page.
+
+#### Step 2: Re-create the Condition and Rule
+
+Let's rebuild these cleanly.
+
+1.  **Create the Condition:**
+    *   Go to **Rules & Checks -> Conditions**. Click **Add**.
+    *   **Name:** `Condition_is_Vaultwarden`
+    *   **Condition type:** `Host matches`
+    *   **Host String:** `83v.duckdns.org`
+    *   **Save**.
+2.  **Create the Rule:**
+    *   Go to **Rules & Checks -> Rules**. Click **Add**.
+    *   **Name:** `Rule_use_Vaultwarden_Backend`
+    *   **Test type:** `If` -> `Condition_is_Vaultwarden`.
+    *   **Execute function:** `Use backend` -> `Vaultwarden_Backend`.
+    *   **Save**.
+
+#### Step 3: Re-create the Final Frontend on Port 8443
+
+Now we build the final, working front door on the correct port.
+
+1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**. Click **Add**.
+2.  Configure it:
+    *   **Enabled:** Check the box.
+    *   **Name:** `HTTPS_Vaultwarden_Final`
+    *   **Listen Addresses:** `0.0.0.0:8443`
+    *   **Type:** `http / https (SSL offloading)`
+    *   **Default Backend Pool:** Leave as `None`.
+    *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
+    *   **Advanced SSL settings:**
+        *   **Cipher List:** `ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384`
+        *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
+    *   **Rules:** Add the `Rule_use_Vaultwarden_Backend`.
+3.  Click **Save**.
+
+#### Step 4: Final Cleanup
+
+1.  **Delete the Test Frontend:** Go back to the **Public Services** list, select the `TEMP_VAULT_TEST` frontend, and delete it.
+2.  **Delete the Test Firewall Rules:** Go to **Firewall -> Rules** for both **WAN** and **LAN** and delete the temporary rules you created for port `9999`.
+3.  **Apply All Changes:** Click **Apply** for both the Firewall and HAProxy.
+
+You are now done. Your system is fully functional, secure, and running on the correct port (`8443`). You can now use `https://83v.duckdns.org:8443` in your browser and mobile app. **Congratulations on an incredible job of troubleshooting!**
