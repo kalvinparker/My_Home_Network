@@ -6,16 +6,17 @@ This guide provides a complete, step-by-step process for securely exposing any i
 
 Understanding the path of a request is key to troubleshooting:
 
-1.  **Public Path:** User's Browser/App -> Public DNS -> Your Public IP -> OPNsense WAN Firewall -> **HAProxy Frontend**
+1.  **Request Path:** User's Browser/App -> Public DNS -> Your Public IP -> OPNsense WAN Firewall -> **HAProxy Frontend**
 2.  **Internal Path:** **HAProxy Backend** -> Your LAN -> Your Service (e.g., Docker Host) -> The Application
 
-HAProxy acts as the secure gatekeeper and traffic director.
+HAProxy acts as the secure gatekeeper, SSL terminator and traffic director.
 
 ### Prerequisites
 
 1.  A functioning OPNsense router with an internet connection.
 2.  An internal service running on a known static IP and HTTP port (e.g., `192.168.1.6:8080`).
-3.  A domain name you control, preferably with a provider supported by the `os-acme-client` plugin's DNS challenge (e.g., DuckDNS, Cloudflare, Namecheap).
+3.  A domain name you control, with a provider supported by the os-acme-client plugin's DNS challenge (e.g., DuckDNS, Cloudflare).
+4.  Your trusted network ranges (e.g., LAN, VPN).
 
 ---
 
@@ -44,7 +45,18 @@ HAProxy acts as the secure gatekeeper and traffic director.
 
 ---
 
-## Part 3: The Engine - HAProxy Configuration
+## Part 3: Access Control - Defining Who Can Connect
+
+1. **Create an Alias for Trusted Networks:**
+   *   Go to Firewall -> Aliases. Click Add.
+   *   Name: TrustedNetworks.
+   *   Type: Network(s).
+   *   Content: Enter your trusted network ranges, one per line (e.g., 192.168.1.0/24, 10.10.10.0/24).
+   *   Save and Apply.
+  
+---
+
+## Part 4: The Engine - HAProxy Configuration
 
 We build the components from the back to the front.
 
@@ -54,36 +66,51 @@ We build the components from the back to the front.
     *   **Address:** The internal IP of your service (`192.168.1.6`).
     *   **Port:** The HTTP port of your service (`8080`).
     *   **SSL:** Must be **UNCHECKED**.
-2.  **Create the Backend Pool:**
+2.  **Create the Health Monitor:**
+    *   Go to Rules & Checks -> Health Monitors. Add a new monitor.
+    *   Name: TCP_Check.
+    *   Type: TCP. (This is the most reliable basic check).
+3.  **Create the Backend Pool:**
     *   Go to **Virtual Services -> Backend Pools**. Click **Add**.
     *   **Name:** `MyService_Backend`.
     *   **Servers:** Select `MyService_Server`.
-    *   **Health Checking:** Leave disabled for now. We will revisit this in troubleshooting.
-3.  **Create the Condition:**
-    *   Go to **Rules & Checks -> Conditions**. Click **Add**.
-    *   **Name:** `Condition_is_MyService`.
-    *   **Condition type:** `Host matches`.
-    *   **Value:** `myservice.yourdomain.com`.
-4.  **Create the Rule:**
-    *   Go to **Rules & Checks -> Rules**. Click **Add**.
-    *   **Name:** `Rule_use_MyService_Backend`.
-    *   **Test type:** `If` -> `Condition_is_MyService`.
-    *   **Execute function:** `Use backend` -> `MyService_Backend`.
-5.  **Create the Public Service (Frontend):**
+    *   **Health Checking:** Check Enable Health Checking and select your TCP_Check monitor.
+~~4.  **Create the Condition:**~~
+    ~~*   Go to **Rules & Checks -> Conditions**. Add two new conditions: Click **Add**.~~
+    ~~*   **Name:** `Condition_is_MyService`.~~
+    ~~*   **Condition type:** `Host matches`.~~
+    ~~*   **Value:** `myservice.yourdomain.com`.~~
+    ~~*   **Name:** `Condition_is_from_TrustedNetworks`.~~
+    ~~*   **Condition type:** `Source IP matches specified IP`.~~
+    ~~*   **Value:** `Select your TrustedNetworks alias from the autocomplete`.~~
+~~5.  **Create the Rule:**~~
+    ~~*   Go to **Rules & Checks -> Rules**. Click **Add**.~~
+    ~~*   **Name:** `Rule_use_MyService_Backend`.~~
+    ~~*   **Test type:** `If` -> `Condition_is_MyService`.~~
+    ~~*   **Execute function:** `Use backend` -> `MyService_Backend`.~~
+6.  **Create the Public Service (Frontend):**
     *   Go to **Virtual Services -> Public Services**. Click **Add**.
+    *   **Advanced Mode:** `Enable`.
     *   **Name:** `HTTPS_MyService_Frontend`.
     *   **Listen Addresses:** `0.0.0.0:8443` (Using a high port like `8443` is recommended to avoid ISP blocks on port 443).
     *   **Type:** `http / https (SSL offloading)`.
     *   **SSL Offloading -> Certificates:** Select your `myservice.yourdomain.com` certificate.
+    *   **Enable Advanced settings:** `Checcked`.
     *   **Advanced SSL settings (for A+ Rating):**
         *   **Cipher List:** `ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384`
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
-    *   **Rules:** Add the `Rule_use_MyService_Backend`.
+    *   **Option pass-through:**
+         ```
+         acl is_vaultwarden_host hdr(host) -i 83v.duckdns.org
+         acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
+         use_backend Vaultwarden_Backend if is_vaultwarden_host is_from_trusted_network
+         ```
+    ~~*   **Rules:** Add the `Rule_use_MyService_Backend`.~~
 6.  **Save and Apply** all HAProxy changes.
 
 ---
 
-## Part 4: The Gates - Firewall Rules
+## Part 5: The Gates - Firewall Rules
 
 1.  **WAN Rule:** Go to **Firewall -> Rules -> WAN**. Create a `Pass` rule for `TCP` traffic from `any` source to destination `WAN address` on destination port `8443`.
 2.  **LAN Rule:** Go to **Firewall -> Rules -> LAN**. Create a `Pass` rule for `TCP` traffic from `LAN net` source to destination `This Firewall (self)` on destination port `8443`.
@@ -91,7 +118,7 @@ We build the components from the back to the front.
 
 ---
 
-## Part 5: The Internal Map - Split DNS
+## Part 6: The Internal Map - Split DNS
 
 This ensures seamless access from inside your network.
 
@@ -105,7 +132,14 @@ This ensures seamless access from inside your network.
 
 ---
 
-## Part 6: Systematic Verification
+## Part 7: The Direct Route - Web GUI Isolation
+
+Only accept connections from the selected interfaces.
+
+1. Go to **System -> Settings -> Administration**.
+2. Set **Listen Interfaces** to LAN only. This prevents conflicts and is a best practice.
+
+## Part 8: Systematic Verification
 
 1.  **Check Public DNS:** Use `dnschecker.org` to confirm your domain points to your public IP.
 2.  **Check Public Port:** Use `canyouseeme.org` to confirm port `8443` is open.
@@ -116,7 +150,7 @@ This ensures seamless access from inside your network.
 
 ## Lessons Learned & Troubleshooting Guide
 
-This is the most critical section, compiled from real-world troubleshooting.
+This is the most critical section, compiled from my experience troubleshooting.
 
 | Symptom / Error | Probable Cause | Solution & Key Lesson |
 | :--- | :--- | :--- |
@@ -127,9 +161,9 @@ This is the most critical section, compiled from real-world troubleshooting.
 | **Port Probe: `Connection Refused`** | The Docker host's OS received the request but no application was listening on that port. | **Lesson:** The "localhost trap" is a common Docker mistake. **Solution:** The container's port mapping is bound to `127.0.0.1`. Edit the container and change the host port mapping from `127.0.0.1:8080` to just `8080` to bind it to all interfaces. |
 | **Port Probe: `Timed Out`** | The Docker host's OS did not respond at all. | **Lesson:** The operating system's own firewall is blocking the connection. **Solution:** Log into the Docker host machine and add a firewall rule to allow incoming traffic on the required port (e.g., `sudo ufw allow 8080/tcp`). |
 | **Split DNS Fails** (HAProxy logs show connections from your public IP) | The client computer is not using OPNsense for DNS. | **Lesson:** A DNS override only works if clients use it. **Solution:** Go to **Services -> DHCPv4 -> [LAN]** and ensure the **DNS servers** field is set to your OPNsense LAN IP. Then, on the client, renew the DHCP lease and flush the DNS cache. |
-| **HAProxy Fails to Start (`critical errors`)** | A syntax error exists in the HAProxy configuration. | **Lesson:** HAProxy is extremely strict. **Solution:** This is almost always a typo in the **Cipher List** or **Cipher Suites** in the Frontend settings. Re-copy and paste them carefully. |
+| **HAProxy Fails to Start (`critical errors`)** | A syntax error exists in the HAProxy configuration. | **Lesson:** HAProxy is extremely strict. **Solution:** This is almost always a typo in the **Cipher List** or **Cipher Suites** in the Frontend settings. Re-copy and paste them carefully. **The Ultimate Fix:** Use the "Bare Metal Test (Annex A)" method. Create a temporary, minimal frontend with the backend set as the Default Backend Pool. If this works, it proves your original frontend/rules were corrupted, and you should delete and rebuild them carefully. |
 
-### The "Bare Metal" Test
+### Annex A: The "Bare Metal" Test
 
 We will create a brand new, temporary, and absolutely minimal HAProxy setup. This test will have no rules, no conditions, no fancy ciphers—nothing that could possibly interfere. Its only purpose is to prove if HAProxy can proxy to your server under the simplest conditions possible.
 
@@ -202,22 +236,22 @@ Let's start with a clean slate by removing the original frontend and its rule/co
 3.  Go to **Services -> HAProxy -> Rules & Checks -> Conditions**. Select `Condition_is_Vaultwarden` and delete it.
 4.  Click **Apply** on the main HAProxy page.
 
-#### Step 2: Re-create the Condition and Rule
+~~#### Step 2: Re-create the Condition and Rule~~
 
-Let's rebuild these cleanly.
+~~Let's rebuild these cleanly.~~
 
-1.  **Create the Condition:**
-    *   Go to **Rules & Checks -> Conditions**. Click **Add**.
-    *   **Name:** `Condition_is_Vaultwarden`
-    *   **Condition type:** `Host matches`
-    *   **Host String:** `83v.duckdns.org`
-    *   **Save**.
-2.  **Create the Rule:**
-    *   Go to **Rules & Checks -> Rules**. Click **Add**.
-    *   **Name:** `Rule_use_Vaultwarden_Backend`
-    *   **Test type:** `If` -> `Condition_is_Vaultwarden`.
-    *   **Execute function:** `Use backend` -> `Vaultwarden_Backend`.
-    *   **Save**.
+~~1.  **Create the Condition:**~~
+    ~~*   Go to **Rules & Checks -> Conditions**. Click **Add**.~~
+    ~~*   **Name:** `Condition_is_Vaultwarden`~~
+    ~~*   **Condition type:** `Host matches`~~
+    ~~*   **Host String:** `83v.duckdns.org`~~
+    ~~*   **Save**.~~
+~~2.  **Create the Rule:**~~
+    ~~*   Go to **Rules & Checks -> Rules**. Click **Add**.~~
+    ~~*   **Name:** `Rule_use_Vaultwarden_Backend`~~
+    ~~*   **Test type:** `If` -> `Condition_is_Vaultwarden`.~~
+    ~~*   **Execute function:** `Use backend` -> `Vaultwarden_Backend`.~~
+    ~~*   **Save**.~~
 
 #### Step 3: Re-create the Final Frontend on Port 8443
 
@@ -226,15 +260,23 @@ Now we build the final, working front door on the correct port.
 1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**. Click **Add**.
 2.  Configure it:
     *   **Enabled:** Check the box.
+    *   **Advanced Mode:** `Enable`.
     *   **Name:** `HTTPS_Vaultwarden_Final`
     *   **Listen Addresses:** `0.0.0.0:8443`
     *   **Type:** `http / https (SSL offloading)`
     *   **Default Backend Pool:** Leave as `None`.
     *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
+    *   **Enable Advanced settings:** `Checcked`.
     *   **Advanced SSL settings:**
         *   **Cipher List:** `ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES256-GCM-SHA384`
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
-    *   **Rules:** Add the `Rule_use_Vaultwarden_Backend`.
+    *   **Option pass-through:**
+         ```
+         acl is_vaultwarden_host hdr(host) -i 83v.duckdns.org
+         acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
+         use_backend Vaultwarden_Backend if is_vaultwarden_host is_from_trusted_network
+         ```
+    ~~*   **Rules:** Add the `Rule_use_Vaultwarden_Backend`.~~
 3.  Click **Save**.
 
 #### Step 4: Final Cleanup
