@@ -2,6 +2,8 @@
 
 This guide provides a complete, step-by-step process for securely exposing any internal service (in a container or on bare metal) to the internet using OPNsense's HAProxy plugin, Let's Encrypt for trusted SSL, and achieving an A+ security rating.
 
+1. **Replace keyword: myservice** with the name of your own internal service (e.g. next-cloud, bitwarden, etc.)
+
 ### Core Concept: The Flow of Traffic
 
 Understanding the path of a request is key to troubleshooting:
@@ -101,9 +103,9 @@ We build the components from the back to the front.
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
     *   **Option pass-through:**
          ```
-         acl is_vaultwarden_host hdr(host) -i 83v.duckdns.org
+         acl is_myservice_host hdr(host) -i 83v.duckdns.org
          acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
-         use_backend Vaultwarden_Backend if is_vaultwarden_host is_from_trusted_network
+         use_backend myservice_Backend if is_myservice_host is_from_trusted_network
          ```
     ~~*   **Rules:** Add the `Rule_use_MyService_Backend`.~~
 6.  **Save and Apply** all HAProxy changes.
@@ -177,7 +179,7 @@ We will create a brand new, temporary, and absolutely minimal HAProxy setup. Thi
     *   **Name:** `TEMP_VAULT_TEST`
     *   **Listen Addresses:** Use a completely new port that isn't used anywhere else, for example: `0.0.0.0:9999`.
     *   **Type:** `http / https (SSL offloading)`.
-    *   **Default Backend Pool:** **This is the key difference.** Instead of using rules, select your `Vaultwarden_Backend` directly from this dropdown menu.
+    *   **Default Backend Pool:** **This is the key difference.** Instead of using rules, select your `myservice_Backend` directly from this dropdown menu.
     *   **SSL Offloading -> Certificates:** Select your `83v.duckdns.org` certificate.
 4.  **DO NOT** add any rules. **DO NOT** add any special cipher strings. Leave everything else as default.
 5.  Click **Save**.
@@ -206,7 +208,7 @@ This is the definitive test.
 
 At that point, the correct action is to take all these screenshots and details and create a post on the official **OPNsense Forum** (forum.opnsense.org). The developers and expert users there will be able to provide insight into system-level issues that go beyond standard configuration. You have done more than enough troubleshooting to justify asking for expert help.
 
-*   **If you see the Vaultwarden login page:** This means there is something wrong with our original `HTTPS_Frontend_Vaultwarden` or its associated `Rule`/`Condition`. It proves the core components (Backend, Server) are fine. The solution would be to delete the old frontend/rule/condition and rebuild them carefully.
+*   **If you see the myservice login page:** This means there is something wrong with our original `HTTPS_Frontend_myservice` or its associated `Rule`/`Condition`. It proves the core components (Backend, Server) are fine. The solution would be to delete the old frontend/rule/condition and rebuild them carefully.
 
 **VICTORY! CONGRATULATIONS!**
 
@@ -218,11 +220,11 @@ The "Bare Metal Test" on port `9999` worked perfectly. This tells us:
 
 *   Your **Certificates** are correct.
 *   Your **Firewall Rules** (both WAN and LAN) are correct.
-*   Your HAProxy **Real Server** (`Vaultwarden_Server`) is correct.
-*   Your HAProxy **Backend Pool** (`Vaultwarden_Backend`) is correct.
-*   The core HAProxy service **is capable** of proxying to Vaultwarden.
+*   Your HAProxy **Real Server** (`myservice_Server`) is correct.
+*   Your HAProxy **Backend Pool** (`myservice_Backend`) is correct.
+*   The core HAProxy service **is capable** of proxying to myservice.
 
-The test proves, with 100% certainty, that the only remaining problem was a "stuck" or "corrupted" state within our original frontend (`HTTPS_Frontend_Vaultwarden`) or its associated `Rule` and `Condition`.
+The test proves, with 100% certainty, that the only remaining problem was a "stuck" or "corrupted" state within our original frontend (`HTTPS_Frontend_myservice`) or its associated `Rule` and `Condition`.
 
 ### The Final Action Plan: Rebuild and Clean Up
 
@@ -232,9 +234,9 @@ Now, we will simply apply the working "bare metal" logic to your desired port (`
 
 Let's start with a clean slate by removing the original frontend and its rule/condition.
 
-1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**. Select `HTTPS_Frontend_Vaultwarden` and click the **trash can icon** to delete it.
-2.  Go to **Services -> HAProxy -> Rules & Checks -> Rules**. Select `Rule_use_Vaultwarden_Backend` and delete it.
-3.  Go to **Services -> HAProxy -> Rules & Checks -> Conditions**. Select `Condition_is_Vaultwarden` and delete it.
+1.  Go to **Services -> HAProxy -> Virtual Services -> Public Services**. Select `HTTPS_Frontend_myservice` and click the **trash can icon** to delete it.
+2.  Go to **Services -> HAProxy -> Rules & Checks -> Rules**. Select `Rule_use_myservice_Backend` and delete it.
+3.  Go to **Services -> HAProxy -> Rules & Checks -> Conditions**. Select `Condition_is_myservice` and delete it.
 4.  Click **Apply** on the main HAProxy page.
 
 #### Step 2: Re-create the Condition and Rule (Skip this as we will add option to pass-through on Frontend)
@@ -243,15 +245,15 @@ Let's start with a clean slate by removing the original frontend and its rule/co
 
 ~~1.  **Create the Condition:**~~
     ~~*   Go to **Rules & Checks -> Conditions**. Click **Add**.~~
-    ~~*   **Name:** `Condition_is_Vaultwarden`~~
+    ~~*   **Name:** `Condition_is_myservice`~~
     ~~*   **Condition type:** `Host matches`~~
     ~~*   **Host String:** `83v.duckdns.org`~~
     ~~*   **Save**.~~
 ~~2.  **Create the Rule:**~~
     ~~*   Go to **Rules & Checks -> Rules**. Click **Add**.~~
-    ~~*   **Name:** `Rule_use_Vaultwarden_Backend`~~
-    ~~*   **Test type:** `If` -> `Condition_is_Vaultwarden`.~~
-    ~~*   **Execute function:** `Use backend` -> `Vaultwarden_Backend`.~~
+    ~~*   **Name:** `Rule_use_myservice_Backend`~~
+    ~~*   **Test type:** `If` -> `Condition_is_myservice`.~~
+    ~~*   **Execute function:** `Use backend` -> `myservice_Backend`.~~
     ~~*   **Save**.~~
 
 #### Step 3: Re-create the Final Frontend on Port 8443
@@ -262,7 +264,7 @@ Now we build the final, working front door on the correct port.
 2.  Configure it:
     *   **Enabled:** Check the box.
     *   **Advanced Mode:** `Enable`.
-    *   **Name:** `HTTPS_Vaultwarden_Final`
+    *   **Name:** `HTTPS_myservice_Final`
     *   **Listen Addresses:** `0.0.0.0:8443`
     *   **Type:** `http / https (SSL offloading)`
     *   **Default Backend Pool:** Leave as `None`.
@@ -273,11 +275,11 @@ Now we build the final, working front door on the correct port.
         *   **Cipher Suites:** `TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256`
     *   **Option pass-through:**
          ```
-         acl is_vaultwarden_host hdr(host) -i 83v.duckdns.org
+         acl is_myservice_host hdr(host) -i 83v.duckdns.org
          acl is_from_trusted_network src 192.168.1.0/24 10.10.10.0/24
-         use_backend Vaultwarden_Backend if is_vaultwarden_host is_from_trusted_network
+         use_backend myservice_Backend if is_myservice_host is_from_trusted_network
          ```
-    ~~*   **Rules:** Add the `Rule_use_Vaultwarden_Backend`.~~
+    ~~*   **Rules:** Add the `Rule_use_myservice_Backend`.~~
 3.  Click **Save**.
 
 #### Step 4: Final Cleanup
