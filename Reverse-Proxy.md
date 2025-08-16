@@ -75,7 +75,7 @@ We build the components from the back to the front.
     *   **Name:** `MyService_Backend`.
     *   **Servers:** Select `MyService_Server`.
     *   **Health Checking:** Check Enable Health Checking and select your TCP_Check monitor.
-~~4.  **Create the Condition:**~~
+4.  **Create the Condition:** (Skip this as we will add option to pass-through on Frontend)
     ~~*   Go to **Rules & Checks -> Conditions**. Add two new conditions: Click **Add**.~~
     ~~*   **Name:** `Condition_is_MyService`.~~
     ~~*   **Condition type:** `Host matches`.~~
@@ -83,7 +83,7 @@ We build the components from the back to the front.
     ~~*   **Name:** `Condition_is_from_TrustedNetworks`.~~
     ~~*   **Condition type:** `Source IP matches specified IP`.~~
     ~~*   **Value:** `Select your TrustedNetworks alias from the autocomplete`.~~
-~~5.  **Create the Rule:**~~
+5.  **Create the Rule:** (Skip this as we will add option to pass-through on Frontend)
     ~~*   Go to **Rules & Checks -> Rules**. Click **Add**.~~
     ~~*   **Name:** `Rule_use_MyService_Backend`.~~
     ~~*   **Test type:** `If` -> `Condition_is_MyService`.~~
@@ -236,7 +236,7 @@ Let's start with a clean slate by removing the original frontend and its rule/co
 3.  Go to **Services -> HAProxy -> Rules & Checks -> Conditions**. Select `Condition_is_Vaultwarden` and delete it.
 4.  Click **Apply** on the main HAProxy page.
 
-~~#### Step 2: Re-create the Condition and Rule~~
+#### Step 2: Re-create the Condition and Rule (Skip this as we will add option to pass-through on Frontend)
 
 ~~Let's rebuild these cleanly.~~
 
